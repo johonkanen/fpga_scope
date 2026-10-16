@@ -19,7 +19,7 @@ lib = vu.add_library("lib")
 lib.add_source_files(interconnect / "fpga_interconnect_generic_pkg.vhd")
 lib.add_source_files(root / "testbench" / "fpga_interconnect_32bit_pkg.vhd")
 lib.add_source_files(memory / "dp_ram_w_configurable_records.vhd")
-lib.add_source_files(memory / "arch_rtl_dp_ram_w_configurable_records.vhd")
+lib.add_source_files(memory / "sdp_ram_w_configurable_records.vhd")
 
 lib.add_source_files(root / "source" / "*.vhd")
 lib.add_source_files(root / "testbench" / "*_tb.vhd")

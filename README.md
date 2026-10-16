@@ -41,7 +41,7 @@ Plain VHDL-2008, vendor independent.
 | `source/scope_capture.vhd` | the scope; its header comment is the register map |
 | `source/test_signal_generator.vhd`, `source/sine_table_pkg.vhd` | the 8 internal test sources |
 | `source/scope_axis_writer.vhd` | the deep capture port to a 64-bit AXI stream, for a DMA that writes a ring in memory |
-| `source/scope_fifo.vhd` | the writer's FIFO, a block RAM of hVHDL_memory_library |
+| `source/scope_fifo.vhd` | the writer's FIFO, a simple dual port block RAM of hVHDL_memory_library |
 | `source/apb_bus_bridge.vhd` | an APB3 slave to register bus master, for a CPU on APB (register *r* at byte offset 4*r*) |
 | `testbench/` | VUnit testbenches, and the 32-bit register bus instance they use |
 
@@ -54,8 +54,9 @@ Two submodules:
   `fpga_interconnect_generic_pkg` with 32 data bits; `testbench/fpga_interconnect_32bit_pkg.vhd`
   is one, with 16 address bits.
 - [hVHDL_memory_library](https://github.com/hVHDL/hVHDL_memory_library):
-  `dp_ram_w_configurable_records.vhd` and its `arch_rtl_...` architecture, for the names RAM
-  and the FIFO.
+  `dp_ram_w_configurable_records.vhd` (its package) and `sdp_ram_w_configurable_records.vhd`
+  (`simple_dual_port_ram`), for the names RAM and the FIFO. The simple dual port RAM takes
+  half the blocks of a true dual port one: the FIFO is 7 Titanium blocks.
 
 ```
 git clone --recursive https://github.com/johonkanen/fpga_scope

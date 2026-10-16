@@ -138,8 +138,9 @@ architecture rtl of scope_capture is
     end function;
 
     constant name_ram_subtype : dpram_ref_record := create_ref_subtypes(datawidth => 32, addresswidth => 9);
+    -- a table only read: the write port idle
     signal name_a_in, name_b_in   : name_ram_subtype.ram_in'subtype;
-    signal name_a_out, name_b_out : name_ram_subtype.ram_out'subtype;
+    signal name_b_out             : name_ram_subtype.ram_out'subtype;
 
     signal phase_increment : std_logic_vector(31 downto 0) := std_logic_vector(to_unsigned(2**32/100, 32));
     signal status          : std_logic_vector(31 downto 0) := (others => '0');
@@ -215,10 +216,9 @@ begin
     u_generator : entity work.test_signal_generator
     port map(clock, sample_enable, unsigned(phase_increment), generator);
 
-    u_names : entity work.dual_port_ram
+    u_names : entity work.simple_dual_port_ram
     generic map(g_dpram_subtype => name_ram_subtype, g_ram_init_values => name_ram_init, g_output_register => false)
-    port map(clock => clock, ram_a_in => name_a_in, ram_a_out => name_a_out,
-             ram_b_in => name_b_in, ram_b_out => name_b_out);
+    port map(clock => clock, write_in => name_a_in, read_in => name_b_in, read_out => name_b_out);
 
 ------------------------------------------------------------------------
     capture : process(clock)
