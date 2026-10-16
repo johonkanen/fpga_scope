@@ -1,0 +1,6 @@
+[submodule "submodules/hVHDL_fpga_interconnect"]
+	path = submodules/hVHDL_fpga_interconnect
+	url = https://github.com/hVHDL/hVHDL_fpga_interconnect
+[submodule "submodules/hVHDL_memory_library"]
+	path = submodules/hVHDL_memory_library
+	url = https://github.com/hVHDL/hVHDL_memory_library
