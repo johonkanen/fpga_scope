@@ -26,7 +26,7 @@ architecture rtl of test_signal_generator is
     -- not be routed to them once the design grew (place and route: "could not find any path")
     attribute syn_srlstyle : string;
     attribute syn_srlstyle of lfsr : signal is "registers";
-    signal counter : unsigned(15 downto 0) := (others => '0');
+    signal counter : unsigned(scope_sample_bits-1 downto 0) := (others => '0');
 
     function to_sample(value : integer) return scope_sample is
     begin
@@ -61,14 +61,14 @@ begin
 
                 samples(0) <= to_sample(sine_value);
                 samples(1) <= to_sample(sine_table(cosine_index));
-                samples(2) <= std_logic_vector(resize(triangle, 16));
+                samples(2) <= to_sample(to_integer(resize(triangle, 16)));
                 if phase(31) = '0' then
                     samples(3) <= to_sample(24000);
                 else
                     samples(3) <= to_sample(-24000);
                 end if;
-                samples(4) <= std_logic_vector(phase(31 downto 16) xor x"8000");
-                samples(5) <= std_logic_vector(noise);
+                samples(4) <= to_sample(to_integer(signed(phase(31 downto 16) xor x"8000")));
+                samples(5) <= to_sample(to_integer(noise));
                 samples(6) <= to_sample(sine_value/2 + to_integer(noise(15 downto 4)));
                 samples(7) <= std_logic_vector(counter);
             end if;

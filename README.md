@@ -14,16 +14,21 @@ Plain VHDL-2008, vendor independent.
 
 ## Features
 
-- 8 channels × 16 bits. Each channel picks one of 8 + `g_probes` sources (up to 64): an
+- 8 channels × 16 or 32 bits. Each channel picks one of 8 + `g_probes` sources (up to 64): an
   internal test generator (sine, cosine, triangle, square, sawtooth, noise, sine with noise, a
   sample counter) and the design's probes.
+- **Sample width per design.** `scope_generic_pkg` takes the width as a generic.
+  `source/scope_pkg.vhd` is the 16-bit instance. A design with 32-bit samples compiles its own
+  `scope_pkg` instead (`testbench/sample_32/scope_pkg_32.vhd` is one). The width also lets
+  probes be IEEE 754 singles (`float_probe`). Register 23 tells the software the width.
 - **Probes describe themselves.** `to_probe(signal)` connects a signal, and
   `probe_entry("name", format)` gives its 16-character name and its format: signed,
-  unsigned, or digital (up to 16 one-bit lanes). The names sit in a block RAM that the
+  unsigned, digital (one-bit lanes), or float (32-bit samples). The names sit in a block RAM that the
   software reads through registers.
-- **Sample rate:** clock / (divider + 1).
+- **Sample rate:** clock / (divider + 1). Alternatively, one sample every divider + 1 pulses of
+  `sample_strobe`, so the samples follow the design's own update rate.
 - **Triggers:**
-  - rising, falling or either edge through a level, signed or unsigned;
+  - rising, falling or either edge through a level: signed, unsigned or float;
   - a masked pattern, for digital probes;
   - or none, or a forced trigger (the software builds auto mode on it), and pre-trigger
     samples.
@@ -37,13 +42,14 @@ Plain VHDL-2008, vendor independent.
 
 | File | What |
 |---|---|
-| `source/scope_pkg.vhd` | constants, `to_probe`, `to_digital`, `probe_entry` |
+| `source/scope_generic_pkg.vhd` | constants, `to_probe`, `to_digital`, `probe_entry`; generic in the sample width |
+| `source/scope_pkg.vhd` | its 16-bit instance |
 | `source/scope_capture.vhd` | the scope; its header comment is the register map |
 | `source/test_signal_generator.vhd`, `source/sine_table_pkg.vhd` | the 8 internal test sources |
-| `source/scope_axis_writer.vhd` | the deep capture port to a 64-bit AXI stream, for a DMA that writes a ring in memory |
+| `source/scope_axis_writer.vhd` | the deep capture port to a 64-bit AXI stream, for a DMA that writes a ring in memory (16-bit samples only) |
 | `source/scope_fifo.vhd` | the writer's FIFO, a simple dual port block RAM of hVHDL_memory_library |
 | `source/apb_bus_bridge.vhd` | an APB3 slave to register bus master, for a CPU on APB (register *r* at byte offset 4*r*) |
-| `testbench/` | VUnit testbenches, and the 32-bit register bus instance they use |
+| `testbench/` | VUnit testbenches, and the 32-bit register bus instance they use; `sample_32/` tests 32-bit samples (VUnit library `lib32`) |
 
 ## Dependencies
 

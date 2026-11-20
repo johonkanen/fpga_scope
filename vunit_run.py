@@ -24,6 +24,17 @@ lib.add_source_files(memory / "sdp_ram_w_configurable_records.vhd")
 lib.add_source_files(root / "source" / "*.vhd")
 lib.add_source_files(root / "testbench" / "*_tb.vhd")
 
+# the same scope with 32 bit samples: its own scope_pkg instance in place of source/scope_pkg.vhd
+# (scope_axis_writer and its FIFO are 16 bit only)
+lib32 = vu.add_library("lib32")
+lib32.add_source_files(interconnect / "fpga_interconnect_generic_pkg.vhd")
+lib32.add_source_files(root / "testbench" / "fpga_interconnect_32bit_pkg.vhd")
+lib32.add_source_files(memory / "dp_ram_w_configurable_records.vhd")
+lib32.add_source_files(memory / "sdp_ram_w_configurable_records.vhd")
+for name in ("scope_generic_pkg", "sine_table_pkg", "test_signal_generator", "scope_capture"):
+    lib32.add_source_files(root / "source" / f"{name}.vhd")
+lib32.add_source_files(root / "testbench" / "sample_32" / "*.vhd")
+
 # the memory library's RAM keeps its contents in a shared variable of a plain type, which
 # synthesis infers as block RAM; nvc takes it with --relaxed
 if os.environ["VUNIT_SIMULATOR"] == "nvc":

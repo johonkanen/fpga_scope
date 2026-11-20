@@ -6,6 +6,8 @@ library ieee;
 -- memory. The software restarts the DMA at the start of its buffer before it arms a deep
 -- capture, which is what capture_reset asks for, so this port is always ready.
 --
+-- 16 bit samples only (scope_pkg with g_sample_bits 16): a record is 128 bits here.
+--
 -- A record is two beats laid out so that the memory holds the channels in order: 16 bit
 -- word 8*s + c of the buffer is channel c of sample s (little endian, channel 0 lowest).
 --

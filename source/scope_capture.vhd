@@ -6,9 +6,10 @@ library ieee;
     use work.fpga_interconnect_pkg.all;
     use work.dual_port_ram_pkg.all;
 
--- Oscilloscope capture: scope_channels channels, each from one of the 8 + g_probes sources
--- (the test generator, then the probes, see scope_pkg),
--- sampled every sample_divider+1 clocks into a g_depth sample ring buffer around a trigger.
+-- Oscilloscope capture: scope_channels channels of scope_sample_bits (16 or 32, scope_pkg),
+-- each from one of the 8 + g_probes sources (the test generator, then the probes),
+-- sampled every sample_divider+1 clocks, or every sample_divider+1 sample_strobes, into a
+-- g_depth sample ring buffer around a trigger.
 --
 -- A capture is started with arm. The buffer first fills with the pre-trigger samples, then
 -- the trigger is awaited (or taken at once when the trigger is disabled), then the samples
@@ -20,10 +21,12 @@ library ieee;
 --      R: status  bits 2:0 state (0 idle, 1 pre-trigger, 2 waiting for trigger,
 --                 3 post-trigger, 4 done), bit 8 trigger was forced,
 --                 bits 31:16 number of completed captures
---   1  RW sample divider, a sample every divider+1 clocks
+--   1  RW sample divider: bits 23:0 a sample every divider+1 clocks; with bit 31 set, every
+--         divider+1 sample_strobes instead (the probes are taken the clock after the strobe)
 --   2  RW trigger: bits 2:0 channel, bits 5:4 condition (0 rising, 1 falling, 2 either edge
---         through the level, 3 pattern), bit 8 enable, bit 9 compare the level unsigned
---   3  RW trigger level, 16 bits
+--         through the level, 3 pattern), bit 8 enable, bit 9 compare the level unsigned,
+--         bit 10 compare the level as a float (sign and magnitude: IEEE 754)
+--   3  RW trigger level, scope_sample_bits wide (a float probe's level is an IEEE single)
 --   4  RW pre-trigger samples
 --   5  RW record length in samples, 1..g_depth
 --   6  RW sources of channels 0..3, 8 bits per channel, channel 0 in bits 7:0
@@ -36,25 +39,28 @@ library ieee;
 --  12  R  deep capture: ring record of sample 0 of the capture
 --  13  R  deep capture: records in the ring
 --  14  RW sources of channels 4..7, 8 bits per channel, channel 4 in bits 7:0
---  15  RW pattern trigger: bits 15:0 pattern, bits 31:16 mask; the trigger is a sample
---         whose masked value equals the masked pattern when the one before did not
+--  15  RW pattern trigger: bits 15:0 pattern, bits 31:16 mask, on the sample's low 16 bits;
+--         the trigger is a sample whose masked value equals the masked pattern when the one
+--         before did not
 --  16  RW probe table index, a source number
 --  17..20  R  name of the source, 16 characters, the first in bits 31:24 of register 17,
 --         unused characters are 0
---  21  R  format of the source: 0 signed, 1 unsigned, 2 digital (bit n is lane n)
+--  21  R  format of the source: 0 signed, 1 unsigned, 2 digital (bit n is lane n), 3 float
 --         (the names and formats are a block RAM, five words a source: a write of the index
 --         fetches them into 17..21, there within 16 clocks)
 --  22  R  deep capture: records the capture port has taken since the arm (capture_written),
 --         how far a continuous capture has got
+--  23  R  bits 7:0 scope_sample_bits (16 or 32), bits 15:8 words per sample
 --
 -- Deep capture writes the samples through the capture port into a ring of g_deep_records
 -- records in an external memory instead of the block RAM; pre-trigger samples and length
 -- are then 32 bit values up to the ring size. The capture is done when the last sample is in
--- the memory. Sample s of the capture is record (start + s) mod ring, eight words each.
+-- the memory. Sample s of the capture is record (start + s) mod ring, record_bits each.
 --
 -- The capture port, served by a memory controller or by scope_axis_writer and a DMA:
 --   capture_reset     one clock at the arm: the ring starts again at record 0
---   capture_write     a record (channel 0 in bits 127:112 ... channel 7 in bits 15:0)
+--   capture_write     a record of record_bits (channel 0 in the top scope_sample_bits ...
+--                     channel 7 in the lowest)
 --   capture_flush     high from the capture's last record until it is done: write out
 --                     everything held back
 --   capture_is_full   records written now would be lost (counted in register 11)
@@ -80,17 +86,18 @@ entity scope_capture is
         -- deep capture through the capture port, see above
         capture_reset   : out boolean;
         capture_write   : out boolean;
-        capture_data    : out std_logic_vector(127 downto 0);
+        capture_data    : out std_logic_vector(record_bits-1 downto 0);
         capture_flush   : out boolean;
         capture_is_full : in boolean := false;
         capture_is_ready : in boolean := true;
-        capture_written : in unsigned(31 downto 0) := (others => '0')
+        capture_written : in unsigned(31 downto 0) := (others => '0');
+        -- a sample every divider+1 strobes when register 1 bit 31 is set
+        sample_strobe   : in boolean := false
     );
 end entity scope_capture;
 
 architecture rtl of scope_capture is
 
-    constant record_bits : natural := scope_channels*scope_sample_bits;
     subtype ring_address is natural range 0 to g_depth-1;
     type ring_memory is array (0 to g_depth-1) of std_logic_vector(record_bits-1 downto 0);
     signal memory : ring_memory := (others => (others => '0'));
@@ -152,7 +159,7 @@ architecture rtl of scope_capture is
     signal sources         : scope_sample_array(0 to source_count-1);
     signal channels        : scope_sample_array(0 to scope_channels-1) := (others => (others => '0'));
     signal channels_valid  : boolean := false;
-    signal previous_value  : signed(15 downto 0) := (others => '0');
+    signal previous_value  : signed(scope_sample_bits-1 downto 0) := (others => '0');
 
     constant max_samples   : natural := maximum(g_depth, g_deep_records);
     signal write_pointer   : ring_address := 0;
@@ -223,7 +230,7 @@ begin
 ------------------------------------------------------------------------
     capture : process(clock)
         variable channel_index : natural range 0 to scope_channels-1;
-        variable level, value  : signed(15 downto 0);
+        variable level, value  : signed(scope_sample_bits-1 downto 0);
         variable edge          : std_logic_vector(1 downto 0);
         variable is_trigger    : boolean;
         variable record_value  : std_logic_vector(record_bits-1 downto 0);
@@ -231,10 +238,23 @@ begin
         variable below_now, below_before, match : boolean;
         variable mask          : std_logic_vector(15 downto 0);
 
-        -- value < level, signed or unsigned
-        function is_below(value, level : signed(15 downto 0); as_unsigned : boolean) return boolean is
+        -- sign and magnitude (IEEE 754) to an unsigned that orders the same way
+        function float_order(x : signed) return unsigned is
+            variable u : unsigned(x'length-1 downto 0) := unsigned(x);
         begin
-            if as_unsigned then
+            if u(u'left) = '1' then
+                return not u;
+            end if;
+            u(u'left) := '1';
+            return u;
+        end function;
+
+        -- value < level, signed, unsigned or float
+        function is_below(value, level : signed; as_unsigned, as_float : boolean) return boolean is
+        begin
+            if as_float then
+                return float_order(value) < float_order(level);
+            elsif as_unsigned then
                 return unsigned(value) < unsigned(level);
             end if;
             return value < level;
@@ -263,6 +283,8 @@ begin
                 connect_read_only_data_to_address(bus_in, bus_out, g_base_address + 17 + i, name_words(i));
             end loop;
             connect_read_only_data_to_address(bus_in, bus_out, g_base_address + 22, std_logic_vector(capture_written));
+            connect_read_only_data_to_address(bus_in, bus_out, g_base_address + 23,
+                std_logic_vector(to_unsigned(words_per_sample * 256 + scope_sample_bits, 32)));
 
             -- probe table readout: a new index's five words fetched from the names' RAM, one at
             -- a time; an index past the sources reads zeros
@@ -294,13 +316,15 @@ begin
                 overflows <= overflows + 1;
             end if;
 
-            -- sample clock
+            -- sample clock: clocks, or sample_strobes with bit 31
             sample_enable <= false;
-            if divider_count < to_integer(unsigned(sample_divider(23 downto 0))) then
-                divider_count <= divider_count + 1;
-            else
-                divider_count <= 0;
-                sample_enable <= true;
+            if sample_divider(31) = '0' or sample_strobe then
+                if divider_count < to_integer(unsigned(sample_divider(23 downto 0))) then
+                    divider_count <= divider_count + 1;
+                else
+                    divider_count <= 0;
+                    sample_enable <= true;
+                end if;
             end if;
 
             -- channel selection, valid the clock after the generator has updated
@@ -365,13 +389,13 @@ begin
 
                 channel_index := to_integer(unsigned(trigger_control(2 downto 0)));
                 value  := signed(channels(channel_index));
-                level  := signed(trigger_level(15 downto 0));
+                level  := signed(trigger_level(scope_sample_bits-1 downto 0));
                 edge   := trigger_control(5 downto 4);
                 previous_value <= value;
-                below_now    := is_below(value, level, trigger_control(9) = '1');
-                below_before := is_below(previous_value, level, trigger_control(9) = '1');
+                below_now    := is_below(value, level, trigger_control(9) = '1', trigger_control(10) = '1');
+                below_before := is_below(previous_value, level, trigger_control(9) = '1', trigger_control(10) = '1');
                 mask  := trigger_pattern(31 downto 16);
-                match := (std_logic_vector(value) and mask) = (trigger_pattern(15 downto 0) and mask);
+                match := (std_logic_vector(value(15 downto 0)) and mask) = (trigger_pattern(15 downto 0) and mask);
                 previous_match <= match;
                 CASE edge is
                     WHEN "00"   => is_trigger := below_before and not below_now;
@@ -464,7 +488,8 @@ begin
     capture_flush <= state = deep_flush;
 
 ------------------------------------------------------------------------
-    -- readout: word w is word w mod 4 of sample w/4, counted from the start of the capture.
+    -- readout: word w is word w mod words_per_sample of sample w/words_per_sample, counted
+    -- from the start of the capture.
     -- read_address comes from a register of the reader, so the data is valid
     -- scope_read_latency = 3 clocks after the reader has set the address
     readout : process(clock)
